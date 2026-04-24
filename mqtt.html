@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meshtastic MQTT Viewer</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+    h1 { color: #67d4a8; margin-bottom: 4px; font-size: 1.4em; }
+    .subtitle { color: #888; font-size: 0.85em; margin-bottom: 16px; }
+    #status { padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; font-size: 0.9em; }
+    #status.connecting { background: #3a3a00; color: #ffcc00; }
+    #status.connected { background: #003a00; color: #67d4a8; }
+    #status.error { background: #3a0000; color: #ff6b6b; }
+    #controls { margin-bottom: 16px; display: flex; gap: 8px; }
+    button { background: #2a2a4a; color: #e0e0e0; border: 1px solid #444; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-family: monospace; }
+    button:hover { background: #3a3a5a; }
+    #messages { display: flex; flex-direction: column; gap: 6px; }
+    .msg { background: #16213e; border: 1px solid #2a2a4a; border-radius: 4px; padding: 10px 12px; word-break: break-word; }
+    .msg-topic { color: #67d4a8; font-size: 0.8em; margin-bottom: 4px; }
+    .msg-time { color: #666; font-size: 0.75em; float: right; }
+    .msg-body { font-size: 0.85em; white-space: pre-wrap; }
+    .msg-body .key { color: #7cacf8; }
+    .msg-body .str { color: #f8c87c; }
+    .msg-body .num { color: #c897f8; }
+    .counter { color: #888; font-size: 0.85em; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Meshtastic MQTT Viewer</h1>
+  <div class="subtitle">msh/EU_868/2/json/#</div>
+  <div id="status" class="connecting">Connecting...</div>
+  <div id="controls">
+    <button onclick="clearMessages()">Clear</button>
+    <button onclick="toggleScroll()" id="scrollBtn">Auto-scroll: ON</button>
+  </div>
+  <div class="counter"><span id="count">0</span> messages</div>
+  <div id="messages"></div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const statusEl = document.getElementById('status');
+    const countEl = document.getElementById('count');
+    const scrollBtn = document.getElementById('scrollBtn');
+    let msgCount = 0;
+    let autoScroll = true;
+
+    function clearMessages() {
+      messagesEl.innerHTML = '';
+      msgCount = 0;
+      countEl.textContent = '0';
+    }
+
+    function toggleScroll() {
+      autoScroll = !autoScroll;
+      scrollBtn.textContent = 'Auto-scroll: ' + (autoScroll ? 'ON' : 'OFF');
+    }
+
+    function syntaxHighlight(json) {
+      const str = JSON.stringify(json, null, 2);
+      return str.replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*")\s*:/g, '<span class="key">$1</span>:')
+                .replace(/:\s*("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*")/g, ': <span class="str">$1</span>')
+                .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="num">$1</span>');
+    }
+
+    const client = mqtt.connect('wss://mq.dg6obo.de:8083/mqtt', {
+      username: 'meshtastic',
+      password: 'meshtastic-demo',
+      reconnectPeriod: 5000,
+    });
+
+    client.on('connect', () => {
+      statusEl.textContent = 'Connected';
+      statusEl.className = 'connected';
+      client.subscribe('msh/EU_868/2/json/#', (err) => {
+        if (err) {
+          statusEl.textContent = 'Subscribe error: ' + err.message;
+          statusEl.className = 'error';
+        }
+      });
+    });
+
+    client.on('error', (err) => {
+      statusEl.textContent = 'Error: ' + err.message;
+      statusEl.className = 'error';
+    });
+
+    client.on('reconnect', () => {
+      statusEl.textContent = 'Reconnecting...';
+      statusEl.className = 'connecting';
+    });
+
+    client.on('close', () => {
+      statusEl.textContent = 'Disconnected';
+      statusEl.className = 'error';
+    });
+
+    client.on('message', (topic, message) => {
+      msgCount++;
+      countEl.textContent = msgCount;
+
+      const div = document.createElement('div');
+      div.className = 'msg';
+
+      const now = new Date().toLocaleTimeString();
+      let body;
+      try {
+        const json = JSON.parse(message.toString());
+        body = syntaxHighlight(json);
+      } catch {
+        body = message.toString();
+      }
+
+      div.innerHTML = `<div class="msg-topic"><span class="msg-time">${now}</span>${topic}</div><div class="msg-body">${body}</div>`;
+      messagesEl.prepend(div);
+
+      // Keep max 500 messages in DOM
+      while (messagesEl.children.length > 500) {
+        messagesEl.removeChild(messagesEl.lastChild);
+      }
+
+      if (autoScroll) {
+        window.scrollTo(0, 0);
+      }
+    });
+  </script>
+</body>
+</html>
