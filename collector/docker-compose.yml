@@ -1,0 +1,48 @@
+services:
+  influxdb:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: meshtastic
+      DOCKER_INFLUXDB_INIT_BUCKET: meshtastic
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
+
+  collector:
+    build: ./collector
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mq.dg6obo.de
+      MQTT_PORT: "1883"
+      MQTT_USER: meshtastic
+      MQTT_PASS: ${MQTT_PASS}
+      MQTT_TOPIC: "msh/+/2/json/#"
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN}
+      INFLUXDB_ORG: meshtastic
+      INFLUXDB_BUCKET: meshtastic
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD}
+    depends_on:
+      - influxdb
+
+volumes:
+  influxdb-data:
+  grafana-data:
